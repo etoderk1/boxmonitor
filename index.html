@@ -8,7 +8,8 @@
     <!-- Tailwind CSS -->
     <script src="https://cdn.tailwindcss.com"></script>
     
-    <!-- Babel for JSX compilation in browser -->
+    <!-- Babel for JSX/TS compilation in browser -->
+    <!-- Using a specific version to avoid 'targets' boolean error -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
 
     <!-- Fonts -->
@@ -16,7 +17,7 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
     
-    <!-- Import Map for React modules -->
+    <!-- Import Map: Cleaned up versions to avoid conflicts -->
     <script type="importmap">
 {
   "imports": {
@@ -43,6 +44,11 @@
                 100: 'rgba(255, 255, 255, 0.03)',
                 200: 'rgba(255, 255, 255, 0.05)',
                 300: 'rgba(255, 255, 255, 0.1)',
+              },
+              neon: {
+                purple: '#a855f7',
+                cyan: '#06b6d4',
+                success: '#4ade80'
               }
             },
             animation: {
@@ -163,17 +169,47 @@
     
     <div id="root"></div>
 
-    <script type="text/babel" data-type="module">
+    <!-- MAIN APP LOGIC -->
+    <!-- Added data-presets="typescript,react" to handle TS syntax and JSX correctly -->
+    <script type="text/babel" data-type="module" data-presets="typescript,react">
       import React, { useState, useEffect, useRef, useMemo } from 'react';
       import { createRoot } from 'react-dom/client';
       import { Copy, Check, Star, Crown, Users, Activity, Globe, RefreshCw, Search, ArrowDownUp, Zap, SlidersHorizontal, Trophy, Hexagon } from 'lucide-react';
+
+      // --- TYPES ---
+      interface ServerData {
+        id: string;
+        name: string;
+        ip: string;
+        port: number;
+        players: number;
+        maxPlayers: number;
+        version: string;
+        status: 'online' | 'offline';
+        description: string;
+        motd: string;
+        favicon?: string;
+      }
+
+      interface Stats {
+        total: number;
+        online: number;
+        players: number;
+      }
+
+      interface FilterState {
+        minPlayers: number;
+        showOffline: boolean;
+      }
+
+      type SortOption = 'online_desc' | 'online_asc' | 'name' | 'favorites';
 
       // --- CONSTANTS ---
       
       const SUREBOX_IMAGE = "https://i.ibb.co/d0cqRRCz/image.png"; 
       const RESERVBOX_VIDEO = "./video_2026-02-01_03-53-39.mp4"; 
 
-      const MOCK_SERVERS = [
+      const MOCK_SERVERS: ServerData[] = [
         {
             id: 'godbox',
             name: 'GodBox',
@@ -538,9 +574,8 @@
 
       // --- SERVICES ---
 
-      const fetchServerStatus = async (server) => {
+      const fetchServerStatus = async (server: ServerData): Promise<Partial<ServerData>> => {
         try {
-          // Primary API: mcstatus.io
           const response = await fetch(`https://api.mcstatus.io/v2/status/java/${server.ip}`);
           const data = await response.json();
 
@@ -563,11 +598,10 @@
             }
           }
         } catch (error) {
-          // console.warn(`mcstatus.io failed for ${server.ip}`, error);
+          // Silent fail
         }
 
         try {
-          // Fallback API: mcsrvstat.us
           const response = await fetch(`https://api.mcsrvstat.us/3/${server.ip}`);
           const data = await response.json();
 
@@ -588,39 +622,45 @@
              return { status: 'offline', players: 0 };
           }
         } catch (e) {
-          // console.error(`All APIs failed for ${server.ip}`, e);
+          // Silent fail
         }
         return { status: 'offline', players: 0 };
       };
 
       // --- COMPONENTS ---
 
-      const ServerCard = ({ server, index, isFavorite, onToggleFavorite, rank }) => {
+      interface ServerCardProps {
+        server: ServerData;
+        index: number;
+        isFavorite: boolean;
+        onToggleFavorite: (id: string) => void;
+        rank?: number;
+      }
+
+      const ServerCard: React.FC<ServerCardProps> = ({ server, index, isFavorite, onToggleFavorite, rank }) => {
         const [copied, setCopied] = useState(false);
         const [isAnimatingFav, setIsAnimatingFav] = useState(false);
         
-        // Easter Egg States
-        const [easterEggType, setEasterEggType] = useState(null); // 'image' | 'video' | null
+        const [easterEggType, setEasterEggType] = useState<'image' | 'video' | null>(null);
         const [hasTriggered, setHasTriggered] = useState(false);
         
-        const videoRef = useRef(null);
+        const videoRef = useRef<HTMLVideoElement>(null);
         const isOnline = server.status === 'online';
 
-        const copyIp = (e) => {
+        const copyIp = (e: React.MouseEvent) => {
           e.stopPropagation();
           navigator.clipboard.writeText(server.ip);
           setCopied(true);
           setTimeout(() => setCopied(false), 2000);
         };
 
-        const handleFavoriteClick = (e) => {
+        const handleFavoriteClick = (e: React.MouseEvent) => {
           e.stopPropagation();
           setIsAnimatingFav(true);
           onToggleFavorite(server.id);
           setTimeout(() => setIsAnimatingFav(false), 400); 
         };
 
-        // Easter Egg Logic
         const handleMouseEnter = () => {
           if (hasTriggered) return;
 
@@ -809,13 +849,13 @@
 
       // --- MAIN APP ---
 
-      const App = () => {
-        const [servers, setServers] = useState(MOCK_SERVERS);
-        const [favorites, setFavorites] = useState([]);
+      const App: React.FC = () => {
+        const [servers, setServers] = useState<ServerData[]>(MOCK_SERVERS);
+        const [favorites, setFavorites] = useState<string[]>([]);
         const [isRefreshing, setIsRefreshing] = useState(false);
         
-        const [sortOption, setSortOption] = useState('online_desc');
-        const [filters, setFilters] = useState({ minPlayers: 0, showOffline: true });
+        const [sortOption, setSortOption] = useState<SortOption>('online_desc');
+        const [filters, setFilters] = useState<FilterState>({ minPlayers: 0, showOffline: true });
         const [searchTerm, setSearchTerm] = useState('');
         
         useEffect(() => {
@@ -826,7 +866,7 @@
           return () => clearInterval(interval);
         }, []);
 
-        const toggleFavorite = (id) => {
+        const toggleFavorite = (id: string) => {
           const newFavorites = favorites.includes(id) 
             ? favorites.filter(favId => favId !== id)
             : [...favorites, id];
@@ -842,7 +882,7 @@
               return { ...server, ...statusUpdate };
             })
           );
-          setServers(updatedServers);
+          setServers(updatedServers as ServerData[]);
           setIsRefreshing(false);
         };
 
